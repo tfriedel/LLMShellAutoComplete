@@ -6,6 +6,7 @@ import subprocess
 import sys
 import sqlite3
 import os
+from pathlib import Path
 import logging
 import argparse
 
@@ -93,8 +94,7 @@ def count_tokens(messages, model="gpt-4") -> int:
 
 async def main():
     # Get OS user name for this user
-    user = os.getlogin()
-    default_atuin_db = "/home/" + user + "/.local/share/atuin/history.db"
+    default_atuin_db = Path.home() / ".local/share/atuin/history.db"
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--atuin",
