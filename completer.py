@@ -1,7 +1,6 @@
 from collections import defaultdict
 import json
 from typing import Dict, List
-import openai
 import subprocess
 import sys
 import sqlite3
@@ -14,6 +13,7 @@ import asyncio
 import random
 import re
 import tiktoken
+from openai import AsyncOpenAI
 
 MAX_TOKENS = 3500
 log_filename = os.path.join(os.path.dirname(__file__), ".completer.log")
@@ -154,7 +154,7 @@ async def main():
     parser.add_argument("--shell", "-s", type=str, default="nushell", help="Shell name. Only given to GPT")
     parser.add_argument("--wezterm", "-w", action="store_true")
     # parser.add_argument("--kitty", "-k", action="store_true")
-    parser.add_argument("--model", "-m", default="gpt-3.5-turbo", help="GPT model to use, gpt-4 or got-3.5-turbo")
+    parser.add_argument("--model", "-m", default="gpt-4o-mini", help="GPT model to use")
     parser.add_argument("commandline", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     ATUIN_SESSION = os.environ.get("ATUIN_SESSION")
@@ -216,7 +216,7 @@ async def main():
     db = open_atuin_db(args.atuin)
     cursor = db.cursor()
     same_process_str = same_cwd_str = same_session_str = ""
-    same_cwd_process1_str = same_cwd_process_session_str = ""
+    same_cwd_process_str = same_cwd_process_session_str = ""
     if args.process_history > 0:
         same_process = []
         for entry in cursor.execute(
@@ -317,20 +317,28 @@ You have to reply with only the full command lines, do not output anything else.
         subprocess.run(
             ["dunstify", "-r", str(dunst_id), f"Completing, {tokens} tokens", f"{cwd}\n\n{cmdline}"]
         )
+    client = AsyncOpenAI(timeout=20.0)
 
-    response = await openai.ChatCompletion.acreate(
+    # debug
+    #print(prompt)
+    response = await client.with_options(timeout=5.0).chat.completions.create(
         model=args.model, messages=prompt, stream=True
     )
 
     async def gen():
-        async for chunk in response:
-            if "choices" not in chunk or len(chunk["choices"]) == 0:
+        async for chunk in response:            
+            #logging.info("ChunkResponse:\n" + str(chunk))
+            if len(chunk.choices) == 0:
                 continue
-            yield chunk["choices"][0]["delta"].get("content", "")
+            result = chunk.choices[0].delta.content
+            if result is None:
+                continue
+            else:
+                yield result
         yield "\n"
     current_data = ""
     async for chunk in gen():
-        # logging.info("ChunkResponse:\n",chunk)
+        #logging.info("ChunkResponse:\n" + str(chunk))
         current_data += chunk
         while "\n" in current_data:
             line, current_data = current_data.split("\n", 1)
